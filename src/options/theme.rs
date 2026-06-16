@@ -13,11 +13,12 @@
 //!
 //! In the absence of other factors, the default assumes a dark terminal background.
 //!
-//! Light vs dark mode is resolved early (before features are gathered) by
+//! Light vs dark mode is resolved early (before the final feature list is gathered) by
 //! [`resolve_color_mode_for_feature_injection`], so that the `dark-features` / `light-features`
-//! settings can activate different features per mode. The terminal-detection result is cached
-//! in `opt.computed.detected_color_mode` and reused here, so the terminal is queried at most
-//! once per invocation.
+//! settings can activate different features per mode. That resolved mode is cached in
+//! `opt.computed.resolved_color_mode` and is authoritative for rendering, so the terminal is
+//! queried at most once and an injected per-mode feature's `syntax-theme` cannot re-flip the
+//! mode used to select it.
 
 use std::io::{stdout, IsTerminal};
 
@@ -93,10 +94,12 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
     } else if opt.dark {
         Some(Dark)
     } else {
-        // Reuse the result of any earlier terminal detection (performed by
-        // `resolve_color_mode_for_feature_injection` before feature gathering) rather than
-        // querying the terminal a second time.
-        opt.computed.detected_color_mode
+        // Use the mode resolved before per-mode feature injection (by
+        // `resolve_color_mode_for_feature_injection`). This is authoritative: it already folded
+        // in detection and the base syntax theme, so a per-mode feature's own `syntax-theme`
+        // (resolved into `opt.syntax_theme` afterwards) cannot re-flip the rendered mode. It also
+        // avoids querying the terminal a second time.
+        opt.computed.resolved_color_mode
     }
 }
 
@@ -124,8 +127,9 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
 /// the mode chosen here always matches the mode the renderer ends up in. The function therefore
 /// never returns `None`; it returns `Option` only to compose with the call site.
 ///
-/// The terminal-detection result is cached in `opt.computed.detected_color_mode` so that the
-/// later call to `get_color_mode` reuses it instead of querying the terminal again.
+/// The caller caches the returned mode in `opt.computed.resolved_color_mode`; `get_color_mode`
+/// reuses it instead of querying the terminal again, and it is authoritative for the rendered
+/// mode when no `--light`/`--dark` or feature-set `light`/`dark` applies.
 pub fn resolve_color_mode_for_feature_injection(
     opt: &mut cli::Opt,
     builtin_features: &std::collections::HashMap<String, crate::features::BuiltinFeature>,
@@ -153,10 +157,8 @@ pub fn resolve_color_mode_for_feature_injection(
         return Some(Light);
     }
     if should_detect_color_mode(opt) {
-        let detected = detect_color_mode();
-        opt.computed.detected_color_mode = detected;
-        if detected.is_some() {
-            return detected;
+        if let Some(detected) = detect_color_mode() {
+            return Some(detected);
         }
     }
     // No explicit mode and no detection result: infer the mode from the syntax theme, and

@@ -109,6 +109,9 @@ pub fn set_options(
     opt.features = Some(base_features.join(" "));
     let injected_mode =
         theme::resolve_color_mode_for_feature_injection(opt, &builtin_features, git_config);
+    // Freeze the resolved mode as authoritative for rendering, so a per-mode feature's own
+    // `syntax-theme` can't later re-flip the mode away from the one used to select it.
+    opt.computed.resolved_color_mode = injected_mode;
     // Restore the original input so pass 2 re-derives the feature list from scratch.
     opt.features = saved_features;
 
@@ -938,6 +941,40 @@ pub mod tests {
             Some(git_config_path),
         );
         assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_injected_per_mode_syntax_theme_does_not_flip_mode() {
+        // Mode resolves to dark from the base feature's dark syntax theme, so dark-features is
+        // injected. The injected dark feature sets a light-classified syntax-theme (GitHub) for
+        // highlighting — that must NOT flip the rendered mode back to light.
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    features = base-dark
+    dark-features = dark-extra
+    light-features = light-extra
+
+[delta \"base-dark\"]
+    syntax-theme = Nord
+
+[delta \"dark-extra\"]
+    syntax-theme = GitHub
+    plus-style = dark-plus-sentinel
+
+[delta \"light-extra\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_injected_per_mode_syntax_theme_no_flip.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "dark-plus-sentinel"); // dark-features was injected
+        assert_eq!(opt.computed.color_mode, crate::color::ColorMode::Dark); // and mode stayed dark
         remove_file(git_config_path).unwrap();
     }
 

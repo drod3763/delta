@@ -1182,9 +1182,12 @@ pub struct ComputedValues {
     pub decorations_width: Width,
     pub inspect_raw_lines: InspectRawLines,
     pub color_mode: ColorMode,
-    /// Result of terminal light/dark detection, cached so it is computed at most once per
-    /// invocation. `None` until detection runs (or if detection is disabled/unavailable).
-    pub detected_color_mode: Option<ColorMode>,
+    /// The effective light/dark mode resolved before per-mode feature injection (see
+    /// `theme::resolve_color_mode_for_feature_injection`). It is the authoritative mode for
+    /// rendering when neither `--light`/`--dark` nor a feature-set `light`/`dark` applies, so an
+    /// injected per-mode feature's `syntax-theme` cannot re-flip the mode. Also avoids querying
+    /// the terminal more than once. `None` until resolved.
+    pub resolved_color_mode: Option<ColorMode>,
     pub paging_mode: PagingMode,
     pub syntax_set: SyntaxSet,
     pub syntax_theme: Option<SyntaxTheme>,
