@@ -162,7 +162,13 @@ pub fn resolve_color_mode_for_feature_injection(
     if light {
         return Some(Light);
     }
-    if should_detect_color_mode(opt) {
+    // `color-only` gates auto-detection, but it may itself be set in the main section or by a
+    // base feature. Resolve its effective value here (the big option macro only finalizes it
+    // later) so detection runs in the same cases as before this two-pass was introduced.
+    let color_only = opt.color_only
+        || get_option_value::<bool>("color-only", builtin_features, opt, git_config)
+            .unwrap_or(false);
+    if should_detect_color_mode(opt, color_only) {
         if let Some(detected) = detect_color_mode() {
             return Some(detected);
         }
@@ -185,10 +191,12 @@ pub fn resolve_color_mode_for_feature_injection(
     )
 }
 
-/// See [`cli::Opt::detect_dark_light`] for a detailed explanation.
-fn should_detect_color_mode(opt: &cli::Opt) -> bool {
+/// See [`cli::Opt::detect_dark_light`] for a detailed explanation. `color_only` is the effective
+/// (config-resolved) value, not necessarily `opt.color_only`, which the option macro finalizes
+/// later.
+fn should_detect_color_mode(opt: &cli::Opt, color_only: bool) -> bool {
     match opt.detect_dark_light {
-        DetectDarkLight::Auto => opt.color_only || stdout().is_terminal(),
+        DetectDarkLight::Auto => color_only || stdout().is_terminal(),
         DetectDarkLight::Always => true,
         DetectDarkLight::Never => false,
     }
@@ -220,6 +228,24 @@ mod tests {
     use super::*;
     use crate::color;
     use crate::tests::integration_test_utils;
+
+    #[test]
+    fn test_should_detect_color_mode_respects_effective_color_only() {
+        // In Auto mode with a non-terminal stdout (as in tests), detection must still run when
+        // the effective `color_only` is true — e.g. set via git config or a feature, not only the
+        // CLI flag. This guards the regression where the early resolver gated detection on the
+        // not-yet-resolved `opt.color_only`.
+        let opt = integration_test_utils::make_options_from_args(&["--detect-dark-light", "auto"]);
+        assert!(!stdout().is_terminal());
+        assert!(should_detect_color_mode(&opt, true));
+        assert!(!should_detect_color_mode(&opt, false));
+        let always =
+            integration_test_utils::make_options_from_args(&["--detect-dark-light", "always"]);
+        assert!(should_detect_color_mode(&always, false));
+        let never =
+            integration_test_utils::make_options_from_args(&["--detect-dark-light", "never"]);
+        assert!(!should_detect_color_mode(&never, true));
+    }
 
     // TODO: Test influence of BAT_THEME env var. E.g. see utils::process::tests::FakeParentArgs.
     #[test]
