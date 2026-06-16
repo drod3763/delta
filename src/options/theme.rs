@@ -112,7 +112,12 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
 ///      not via the feature machinery),
 ///   3. terminal detection (subject to `--detect-dark-light`),
 ///   4. the syntax theme, when none of the above resolve a mode — a light syntax theme
-///      implies light mode and vice versa, just as the final resolution does.
+///      implies light mode and vice versa, just as the final resolution does,
+///   5. otherwise the default dark mode.
+///
+/// Steps 4 and 5 mirror `get_color_mode_and_syntax_theme_name`'s handling of a `None` mode, so
+/// the mode chosen here always matches the mode the renderer ends up in. The function therefore
+/// never returns `None`; it returns `Option` only to compose with the call site.
 ///
 /// The terminal-detection result is cached in `opt.computed.detected_color_mode` so that the
 /// later call to `get_color_mode` reuses it instead of querying the terminal again.
@@ -152,12 +157,16 @@ pub fn resolve_color_mode_for_feature_injection(
             return detected;
         }
     }
-    // No explicit mode and no detection result: infer the mode from the syntax theme, matching
-    // the `(Some(theme), None)` branch of `get_color_mode_and_syntax_theme_name`.
-    syntax_theme
-        .as_deref()
-        .filter(|theme| !is_no_syntax_highlighting_syntax_theme_name(theme))
-        .map(color_mode_from_syntax_theme)
+    // No explicit mode and no detection result: infer the mode from the syntax theme, and
+    // otherwise fall back to dark — exactly the `(Some(theme), None)` / `(None, None)` branches
+    // of `get_color_mode_and_syntax_theme_name`, so per-mode features match the rendered mode.
+    Some(
+        syntax_theme
+            .as_deref()
+            .filter(|theme| !is_no_syntax_highlighting_syntax_theme_name(theme))
+            .map(color_mode_from_syntax_theme)
+            .unwrap_or(Dark),
+    )
 }
 
 /// See [`cli::Opt::detect_dark_light`] for a detailed explanation.

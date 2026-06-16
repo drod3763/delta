@@ -928,6 +928,29 @@ pub mod tests {
     }
 
     #[test]
+    fn test_dark_features_applied_on_default_dark_fallback() {
+        // No mode flag, no syntax theme, detection disabled: the final color mode defaults to
+        // dark, so `dark-features` must still be applied (matching the renderer's mode).
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    dark-features = my-dark
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+";
+        let git_config_path = "delta__test_dark_features_default_dark_fallback.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "dark-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
     fn test_non_matching_per_mode_features_not_activated() {
         // Only `dark-features` is set, but we run in light mode: nothing is injected and the
         // dark sentinel must not appear.
