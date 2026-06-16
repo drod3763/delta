@@ -100,19 +100,24 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
     }
 }
 
-/// Resolve the effective color mode *before* features are gathered, so that per-mode feature
-/// lists (`dark-features` / `light-features`) can be activated according to the detected mode.
+/// Resolve the effective color mode *before* the final feature list is gathered, so that the
+/// per-mode feature lists (`dark-features` / `light-features`) can be activated according to the
+/// mode the renderer will actually use.
 ///
-/// The trigger deliberately considers only sources that are independent of the feature list,
-/// to avoid a circular dependency (an activated theme typically sets `dark = true` itself).
-/// It mirrors the precedence later applied by [`get_color_mode`] +
+/// The caller must set `opt.features` to the **base** feature list (gathered without per-mode
+/// injection) before calling this. That keeps the resolution non-circular — the per-mode lists
+/// themselves are not consulted when deciding which of them to activate — while still honoring a
+/// light/dark-declaring theme placed in `features`.
+///
+/// Precedence mirrors the final resolution applied by [`get_color_mode`] +
 /// [`get_color_mode_and_syntax_theme_name`]:
 ///   1. the `--light` / `--dark` command-line flags,
-///   2. the `light` / `dark` keys in the main `[delta]` git config section (read directly,
-///      not via the feature machinery),
+///   2. the `light` / `dark` settings resolved over the main `[delta]` section and the base
+///      feature list (exactly as [`crate::options::get::get_option_value`] resolves them at
+///      final time), so a mode-declaring theme in `features` counts here too,
 ///   3. terminal detection (subject to `--detect-dark-light`),
-///   4. the syntax theme, when none of the above resolve a mode — a light syntax theme
-///      implies light mode and vice versa, just as the final resolution does,
+///   4. the syntax theme, when none of the above resolve a mode — a light syntax theme implies
+///      light mode and vice versa,
 ///   5. otherwise the default dark mode.
 ///
 /// Steps 4 and 5 mirror `get_color_mode_and_syntax_theme_name`'s handling of a `None` mode, so
@@ -123,32 +128,29 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
 /// later call to `get_color_mode` reuses it instead of querying the terminal again.
 pub fn resolve_color_mode_for_feature_injection(
     opt: &mut cli::Opt,
+    builtin_features: &std::collections::HashMap<String, crate::features::BuiltinFeature>,
     git_config: &mut Option<GitConfig>,
 ) -> Option<ColorMode> {
+    use crate::options::get::get_option_value;
+
     if opt.light {
         return Some(Light);
     }
     if opt.dark {
         return Some(Dark);
     }
-    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; the
-    // main-section `delta.syntax-theme` is resolved later, so read it directly here.
-    let mut syntax_theme = opt.syntax_theme.clone();
-    if let Some(git_config) = git_config {
-        // Read the main-section keys directly; do not consult enabled features (that would be
-        // circular). If both are literally set, prefer Dark here and let the existing
-        // `validate_light_and_dark` raise the error later.
-        let main_dark = git_config.get::<bool>("delta.dark").unwrap_or(false);
-        let main_light = git_config.get::<bool>("delta.light").unwrap_or(false);
-        if main_dark {
-            return Some(Dark);
-        }
-        if main_light {
-            return Some(Light);
-        }
-        if syntax_theme.is_none() {
-            syntax_theme = git_config.get::<String>("delta.syntax-theme");
-        }
+    // Resolve `dark`/`light` exactly as the final resolution does — over the main `[delta]`
+    // section and the (base) feature list now on `opt.features`. A theme in `features` that
+    // declares its mode is therefore respected. On a conflict, prefer Dark and let the existing
+    // `validate_light_and_dark` raise the error later.
+    let dark = get_option_value::<bool>("dark", builtin_features, opt, git_config).unwrap_or(false);
+    let light =
+        get_option_value::<bool>("light", builtin_features, opt, git_config).unwrap_or(false);
+    if dark {
+        return Some(Dark);
+    }
+    if light {
+        return Some(Light);
     }
     if should_detect_color_mode(opt) {
         let detected = detect_color_mode();
@@ -160,6 +162,14 @@ pub fn resolve_color_mode_for_feature_injection(
     // No explicit mode and no detection result: infer the mode from the syntax theme, and
     // otherwise fall back to dark — exactly the `(Some(theme), None)` / `(None, None)` branches
     // of `get_color_mode_and_syntax_theme_name`, so per-mode features match the rendered mode.
+    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; the
+    // main-section `delta.syntax-theme` is resolved later, so read it directly here.
+    let mut syntax_theme = opt.syntax_theme.clone();
+    if syntax_theme.is_none() {
+        if let Some(git_config) = git_config {
+            syntax_theme = git_config.get::<String>("delta.syntax-theme");
+        }
+    }
     Some(
         syntax_theme
             .as_deref()

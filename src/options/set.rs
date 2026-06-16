@@ -93,10 +93,24 @@ pub fn set_options(
         builtin_features.remove("side-by-side");
     }
 
-    // Resolve the effective color mode before gathering features so that per-mode feature
-    // lists (`dark-features` / `light-features`) can be activated according to the detected
-    // mode. This also caches any terminal detection in `opt.computed.detected_color_mode`.
-    let injected_mode = theme::resolve_color_mode_for_feature_injection(opt, git_config);
+    // Per-mode feature lists (`dark-features` / `light-features`) are activated according to
+    // the effective color mode. Resolve that mode the same way the final resolution will (so
+    // the per-mode list always matches the rendered mode) using a two-pass gather:
+    //
+    //   pass 1: gather the base feature list with no per-mode injection, then resolve the mode
+    //           from it (this is what lets a light/dark-declaring theme in `features`, as well
+    //           as the main section, CLI flags, detection, and the syntax theme, all count);
+    //   pass 2: inject the per-mode list matching that mode and gather the final list.
+    //
+    // Only the matching mode's list is ever gathered, so listing both never conflicts.
+    let saved_features = opt.features.clone();
+    let base_features = gather_features(opt, &builtin_features, git_config, None);
+    // Expose the base list to `get_option_value` (via opt.features) while resolving the mode.
+    opt.features = Some(base_features.join(" "));
+    let injected_mode =
+        theme::resolve_color_mode_for_feature_injection(opt, &builtin_features, git_config);
+    // Restore the original input so pass 2 re-derives the feature list from scratch.
+    opt.features = saved_features;
 
     let features = gather_features(opt, &builtin_features, git_config, injected_mode);
     opt.features = Some(features.join(" "));
@@ -924,6 +938,69 @@ pub mod tests {
             Some(git_config_path),
         );
         assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_per_mode_features_follow_feature_declared_mode() {
+        // A theme in the base `features` list declares light mode; with no explicit mode and no
+        // detection, the per-mode selection must follow that feature-derived mode and activate
+        // `light-features` (not `dark-features`).
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    features = my-light-theme
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"my-light-theme\"]
+    light = true
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_per_mode_features_feature_declared_mode.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_explicit_dark_with_both_per_mode_lists_uses_dark_without_error() {
+        // Explicit --dark must activate dark-features and never gather light-features, even when
+        // the light-features theme declares `light = true`. This must not raise the
+        // \"--light and --dark cannot be used together\" error.
+        let git_config_contents = b"
+[delta]
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_explicit_dark_both_lists.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--dark"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert!(opt.dark);
+        assert!(!opt.light);
+        assert_eq!(opt.plus_style, "dark-plus-sentinel");
         remove_file(git_config_path).unwrap();
     }
 
