@@ -904,6 +904,30 @@ pub mod tests {
     }
 
     #[test]
+    fn test_per_mode_features_follow_syntax_theme_derived_mode() {
+        // No mode flag and detection disabled: the final color mode is derived from the
+        // syntax theme (GitHub -> light), so `light-features` must be activated to match.
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    syntax-theme = GitHub
+    light-features = my-light
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_per_mode_features_syntax_theme_derived.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
     fn test_non_matching_per_mode_features_not_activated() {
         // Only `dark-features` is set, but we run in light mode: nothing is injected and the
         // dark sentinel must not appear.

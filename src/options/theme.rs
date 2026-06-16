@@ -104,11 +104,15 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
 /// lists (`dark-features` / `light-features`) can be activated according to the detected mode.
 ///
 /// The trigger deliberately considers only sources that are independent of the feature list,
-/// to avoid a circular dependency (an activated theme typically sets `dark = true` itself):
+/// to avoid a circular dependency (an activated theme typically sets `dark = true` itself).
+/// It mirrors the precedence later applied by [`get_color_mode`] +
+/// [`get_color_mode_and_syntax_theme_name`]:
 ///   1. the `--light` / `--dark` command-line flags,
 ///   2. the `light` / `dark` keys in the main `[delta]` git config section (read directly,
 ///      not via the feature machinery),
-///   3. terminal detection (subject to `--detect-dark-light`).
+///   3. terminal detection (subject to `--detect-dark-light`),
+///   4. the syntax theme, when none of the above resolve a mode — a light syntax theme
+///      implies light mode and vice versa, just as the final resolution does.
 ///
 /// The terminal-detection result is cached in `opt.computed.detected_color_mode` so that the
 /// later call to `get_color_mode` reuses it instead of querying the terminal again.
@@ -122,6 +126,9 @@ pub fn resolve_color_mode_for_feature_injection(
     if opt.dark {
         return Some(Dark);
     }
+    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; the
+    // main-section `delta.syntax-theme` is resolved later, so read it directly here.
+    let mut syntax_theme = opt.syntax_theme.clone();
     if let Some(git_config) = git_config {
         // Read the main-section keys directly; do not consult enabled features (that would be
         // circular). If both are literally set, prefer Dark here and let the existing
@@ -134,13 +141,23 @@ pub fn resolve_color_mode_for_feature_injection(
         if main_light {
             return Some(Light);
         }
+        if syntax_theme.is_none() {
+            syntax_theme = git_config.get::<String>("delta.syntax-theme");
+        }
     }
     if should_detect_color_mode(opt) {
         let detected = detect_color_mode();
         opt.computed.detected_color_mode = detected;
-        return detected;
+        if detected.is_some() {
+            return detected;
+        }
     }
-    None
+    // No explicit mode and no detection result: infer the mode from the syntax theme, matching
+    // the `(Some(theme), None)` branch of `get_color_mode_and_syntax_theme_name`.
+    syntax_theme
+        .as_deref()
+        .filter(|theme| !is_no_syntax_highlighting_syntax_theme_name(theme))
+        .map(color_mode_from_syntax_theme)
 }
 
 /// See [`cli::Opt::detect_dark_light`] for a detailed explanation.
