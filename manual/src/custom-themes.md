@@ -45,5 +45,7 @@ the mode is set explicitly with `--dark` / `--light` (or `delta.dark` / `delta.l
 
 Because the values are ordinary feature lists, they can reference any feature — not only color
 themes. For example you can enable `side-by-side` only in dark mode, or use a different
-`syntax-theme` per mode. The per-mode lists take priority over a plain `features` list but are
-still overridden by `--features` given on the command line.
+`syntax-theme` per mode. The per-mode lists take priority over a plain `features` list. Like
+`features`, they are part of the git-config feature list, so passing `--features` on the
+command line replaces them (use the `+` prefix, e.g. `--features +side-by-side`, to add to the
+configured features instead of replacing them).

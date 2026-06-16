@@ -405,30 +405,30 @@ fn gather_features(
     }
 
     if let Some(git_config) = git_config {
-        // Gather per-mode features (`dark-features` / `light-features`) from the [delta]
-        // section according to the resolved color mode. Gathered before `delta.features` so
-        // that per-mode features take priority over a generic `features` list (but still lose
-        // to features supplied on the command line, which were gathered first).
-        if let Some(mode) = injected_mode {
-            use crate::color::ColorMode;
-            let key = match mode {
-                ColorMode::Dark => "delta.dark-features",
-                ColorMode::Light => "delta.light-features",
-            };
-            if let Some(feature_string) = git_config.get::<String>(key) {
-                for feature in split_feature_string(&feature_string) {
-                    gather_features_recursively(
-                        feature,
-                        &mut features,
-                        builtin_features,
-                        opt,
-                        git_config,
-                    )
+        // Gather features from [delta] section if --features was not passed. An explicit
+        // --features replaces the git-config feature list, including the per-mode lists.
+        if opt.features.is_none() {
+            // Gather per-mode features (`dark-features` / `light-features`) according to the
+            // resolved color mode, before `delta.features` so that they take priority over a
+            // generic `features` list.
+            if let Some(mode) = injected_mode {
+                use crate::color::ColorMode;
+                let key = match mode {
+                    ColorMode::Dark => "delta.dark-features",
+                    ColorMode::Light => "delta.light-features",
+                };
+                if let Some(feature_string) = git_config.get::<String>(key) {
+                    for feature in split_feature_string(&feature_string) {
+                        gather_features_recursively(
+                            feature,
+                            &mut features,
+                            builtin_features,
+                            opt,
+                            git_config,
+                        )
+                    }
                 }
             }
-        }
-        // Gather features from [delta] section if --features was not passed.
-        if opt.features.is_none() {
             if let Some(feature_string) = git_config.get::<String>("delta.features") {
                 for feature in split_feature_string(&feature_string) {
                     gather_features_recursively(
@@ -950,8 +950,10 @@ pub mod tests {
     }
 
     #[test]
-    fn test_command_line_features_outrank_per_mode_features() {
-        // `--features cli-feat` must win over `dark-features` for an option both set.
+    fn test_command_line_features_suppress_per_mode_features() {
+        // Like `delta.features`, an explicit `--features` replaces the git-config feature
+        // list, so per-mode features are suppressed entirely (not merely outranked). A
+        // non-conflicting option set only by the per-mode feature must not leak through.
         let git_config_contents = b"
 [delta]
     dark-features = gc-feat
@@ -960,15 +962,16 @@ pub mod tests {
     plus-style = gc-plus
 
 [delta \"cli-feat\"]
-    plus-style = cli-plus
+    minus-style = cli-minus
 ";
-        let git_config_path = "delta__test_cli_features_outrank_per_mode.gitconfig";
+        let git_config_path = "delta__test_cli_features_suppress_per_mode.gitconfig";
         let opt = integration_test_utils::make_options_from_args_and_git_config(
             &["--dark", "--features", "cli-feat"],
             Some(git_config_contents),
             Some(git_config_path),
         );
-        assert_eq!(opt.plus_style, "cli-plus");
+        assert_ne!(opt.plus_style, "gc-plus"); // gc-feat suppressed by --features
+        assert_eq!(opt.minus_style, "cli-minus"); // cli-feat applied
         remove_file(git_config_path).unwrap();
     }
 
