@@ -942,6 +942,39 @@ pub mod tests {
     }
 
     #[test]
+    fn test_per_mode_features_follow_feature_provided_syntax_theme() {
+        // A base feature provides a light syntax theme (and nothing declares light/dark, no
+        // detection). The final mode is derived from that syntax theme (GitHub -> light), so the
+        // per-mode selection must follow it and inject `light-features`.
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    features = base
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"base\"]
+    syntax-theme = GitHub
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_per_mode_features_feature_syntax_theme.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
     fn test_per_mode_features_follow_feature_declared_mode() {
         // A theme in the base `features` list declares light mode; with no explicit mode and no
         // detection, the per-mode selection must follow that feature-derived mode and activate

@@ -162,14 +162,12 @@ pub fn resolve_color_mode_for_feature_injection(
     // No explicit mode and no detection result: infer the mode from the syntax theme, and
     // otherwise fall back to dark — exactly the `(Some(theme), None)` / `(None, None)` branches
     // of `get_color_mode_and_syntax_theme_name`, so per-mode features match the rendered mode.
-    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; the
-    // main-section `delta.syntax-theme` is resolved later, so read it directly here.
-    let mut syntax_theme = opt.syntax_theme.clone();
-    if syntax_theme.is_none() {
-        if let Some(git_config) = git_config {
-            syntax_theme = git_config.get::<String>("delta.syntax-theme");
-        }
-    }
+    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; otherwise
+    // resolve it with the same precedence as final setup (main section, then the base feature
+    // list now on `opt.features`) so a feature-provided syntax theme is honored too.
+    let syntax_theme = opt.syntax_theme.clone().or_else(|| {
+        get_option_value::<String>("syntax-theme", builtin_features, opt, git_config)
+    });
     Some(
         syntax_theme
             .as_deref()
