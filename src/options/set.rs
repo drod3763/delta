@@ -945,6 +945,40 @@ pub mod tests {
     }
 
     #[test]
+    fn test_injected_per_mode_dark_light_flag_does_not_flip_mode() {
+        // Mode resolves to light (base feature's light syntax theme), so light-features is
+        // injected. That injected feature contradictorily declares `dark = true`; the resolved
+        // (light) mode must remain authoritative for rendering.
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    features = base-light
+    dark-features = dark-extra
+    light-features = light-extra
+
+[delta \"base-light\"]
+    syntax-theme = GitHub
+
+[delta \"light-extra\"]
+    dark = true
+    plus-style = light-plus-sentinel
+
+[delta \"dark-extra\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+";
+        let git_config_path = "delta__test_injected_per_mode_dark_flag_no_flip.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel"); // light-features was injected
+        assert_eq!(opt.computed.color_mode, crate::color::ColorMode::Light); // mode stayed light
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
     fn test_injected_per_mode_syntax_theme_does_not_flip_mode() {
         // Mode resolves to dark from the base feature's dark syntax theme, so dark-features is
         // injected. The injected dark feature sets a light-classified syntax-theme (GitHub) for

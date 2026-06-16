@@ -89,17 +89,23 @@ fn get_color_mode_and_syntax_theme_name(
 }
 
 fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
+    // The mode resolved before per-mode feature injection (by
+    // `resolve_color_mode_for_feature_injection`) is authoritative: it already folded in the CLI
+    // `--light`/`--dark` flags, the main-section and base-feature `light`/`dark` settings,
+    // detection, and the base syntax theme. Using it here means the per-mode feature that was
+    // *selected* by that mode cannot then re-flip the rendered mode — via its own `light`/`dark`
+    // flags or its `syntax-theme`. It also avoids querying the terminal a second time.
+    if let Some(mode) = opt.computed.resolved_color_mode {
+        return Some(mode);
+    }
+    // Fallback for any path that did not resolve a mode (the normal `set_options` flow always
+    // does): honor explicit flags, otherwise leave the mode unresolved.
     if opt.light {
         Some(Light)
     } else if opt.dark {
         Some(Dark)
     } else {
-        // Use the mode resolved before per-mode feature injection (by
-        // `resolve_color_mode_for_feature_injection`). This is authoritative: it already folded
-        // in detection and the base syntax theme, so a per-mode feature's own `syntax-theme`
-        // (resolved into `opt.syntax_theme` afterwards) cannot re-flip the rendered mode. It also
-        // avoids querying the terminal a second time.
-        opt.computed.resolved_color_mode
+        None
     }
 }
 
