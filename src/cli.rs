@@ -1182,6 +1182,9 @@ pub struct ComputedValues {
     pub decorations_width: Width,
     pub inspect_raw_lines: InspectRawLines,
     pub color_mode: ColorMode,
+    /// Result of terminal light/dark detection, cached so it is computed at most once per
+    /// invocation. `None` until detection runs (or if detection is disabled/unavailable).
+    pub detected_color_mode: Option<ColorMode>,
     pub paging_mode: PagingMode,
     pub syntax_set: SyntaxSet,
     pub syntax_theme: Option<SyntaxTheme>,

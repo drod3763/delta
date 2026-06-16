@@ -93,7 +93,12 @@ pub fn set_options(
         builtin_features.remove("side-by-side");
     }
 
-    let features = gather_features(opt, &builtin_features, git_config);
+    // Resolve the effective color mode before gathering features so that per-mode feature
+    // lists (`dark-features` / `light-features`) can be activated according to the detected
+    // mode. This also caches any terminal detection in `opt.computed.detected_color_mode`.
+    let injected_mode = theme::resolve_color_mode_for_feature_injection(opt, git_config);
+
+    let features = gather_features(opt, &builtin_features, git_config, injected_mode);
     opt.features = Some(features.join(" "));
 
     // Set light, dark, and syntax-theme.
@@ -343,6 +348,7 @@ fn gather_features(
     opt: &mut cli::Opt,
     builtin_features: &HashMap<String, features::BuiltinFeature>,
     git_config: &Option<GitConfig>,
+    injected_mode: Option<crate::color::ColorMode>,
 ) -> Vec<String> {
     let from_env_var = &opt.env.features;
     let from_args = opt.features.as_deref().unwrap_or("");
@@ -399,6 +405,28 @@ fn gather_features(
     }
 
     if let Some(git_config) = git_config {
+        // Gather per-mode features (`dark-features` / `light-features`) from the [delta]
+        // section according to the resolved color mode. Gathered before `delta.features` so
+        // that per-mode features take priority over a generic `features` list (but still lose
+        // to features supplied on the command line, which were gathered first).
+        if let Some(mode) = injected_mode {
+            use crate::color::ColorMode;
+            let key = match mode {
+                ColorMode::Dark => "delta.dark-features",
+                ColorMode::Light => "delta.light-features",
+            };
+            if let Some(feature_string) = git_config.get::<String>(key) {
+                for feature in split_feature_string(&feature_string) {
+                    gather_features_recursively(
+                        feature,
+                        &mut features,
+                        builtin_features,
+                        opt,
+                        git_config,
+                    )
+                }
+            }
+        }
         // Gather features from [delta] section if --features was not passed.
         if opt.features.is_none() {
             if let Some(feature_string) = git_config.get::<String>("delta.features") {
@@ -803,6 +831,163 @@ pub mod tests {
 
         assert_eq!(opt.computed.paging_mode, PagingMode::Never);
 
+        remove_file(git_config_path).unwrap();
+    }
+
+    // Git config defining per-mode features used by the `dark-features`/`light-features` tests.
+    // `my-dark`/`my-light` are themes (they set `dark`/`light`); each sets a distinctive
+    // `plus-style` so we can tell which was activated.
+    const PER_MODE_FEATURES_GIT_CONFIG: &[u8] = b"
+[delta]
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+
+    #[test]
+    fn test_dark_features_activated_when_dark() {
+        let git_config_path = "delta__test_dark_features_when_dark.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--dark"],
+            Some(PER_MODE_FEATURES_GIT_CONFIG),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "dark-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_light_features_activated_when_light() {
+        let git_config_path = "delta__test_light_features_when_light.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--light"],
+            Some(PER_MODE_FEATURES_GIT_CONFIG),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_per_mode_features_triggered_by_main_section_dark() {
+        // No CLI flag: the mode is taken from the main-section `dark = true` key, read directly
+        // (terminal detection returns None under #[cfg(test)]).
+        let git_config_contents = b"
+[delta]
+    dark = true
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_per_mode_features_main_section_dark.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "dark-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_non_matching_per_mode_features_not_activated() {
+        // Only `dark-features` is set, but we run in light mode: nothing is injected and the
+        // dark sentinel must not appear.
+        let git_config_contents = b"
+[delta]
+    dark-features = my-dark
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+";
+        let git_config_path = "delta__test_non_matching_per_mode_features.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--light"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_ne!(opt.plus_style, "dark-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_command_line_features_outrank_per_mode_features() {
+        // `--features cli-feat` must win over `dark-features` for an option both set.
+        let git_config_contents = b"
+[delta]
+    dark-features = gc-feat
+
+[delta \"gc-feat\"]
+    plus-style = gc-plus
+
+[delta \"cli-feat\"]
+    plus-style = cli-plus
+";
+        let git_config_path = "delta__test_cli_features_outrank_per_mode.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--dark", "--features", "cli-feat"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "cli-plus");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_explicit_light_overrides_per_mode_feature_dark_flag() {
+        // `light-features` points at a theme whose body sets `dark = true`. The explicit
+        // `--light` flag must hold, and the conflicting flag must not raise the
+        // \"--light and --dark cannot be used together\" error.
+        let git_config_contents = b"
+[delta]
+    light-features = mislabelled
+
+[delta \"mislabelled\"]
+    dark = true
+    plus-style = mislabelled-plus
+";
+        let git_config_path = "delta__test_explicit_light_overrides_feature_dark.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--light"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert!(opt.light);
+        assert!(!opt.dark);
+        assert_eq!(opt.plus_style, "mislabelled-plus");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_no_per_mode_features_no_behavior_change() {
+        // Detection disabled, no flags, no per-mode keys: nothing is injected and no panic.
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    plus-style = plain-plus
+";
+        let git_config_path = "delta__test_no_per_mode_features.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "plain-plus");
         remove_file(git_config_path).unwrap();
     }
 

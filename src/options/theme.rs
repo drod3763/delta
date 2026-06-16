@@ -12,6 +12,12 @@
 //!    supplied then it detected from the terminal. If this fails it is inferred from the chosen theme.
 //!
 //! In the absence of other factors, the default assumes a dark terminal background.
+//!
+//! Light vs dark mode is resolved early (before features are gathered) by
+//! [`resolve_color_mode_for_feature_injection`], so that the `dark-features` / `light-features`
+//! settings can activate different features per mode. The terminal-detection result is cached
+//! in `opt.computed.detected_color_mode` and reused here, so the terminal is queried at most
+//! once per invocation.
 
 use std::io::{stdout, IsTerminal};
 
@@ -22,6 +28,7 @@ use terminal_colorsaurus::{color_scheme, QueryOptions};
 
 use crate::cli::{self, DetectDarkLight};
 use crate::color::{ColorMode, ColorMode::*};
+use crate::git_config::GitConfig;
 
 #[allow(non_snake_case)]
 pub fn set__color_mode__syntax_theme__syntax_set(opt: &mut cli::Opt, assets: HighlightingAssets) {
@@ -85,11 +92,55 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
         Some(Light)
     } else if opt.dark {
         Some(Dark)
-    } else if should_detect_color_mode(opt) {
-        detect_color_mode()
     } else {
-        None
+        // Reuse the result of any earlier terminal detection (performed by
+        // `resolve_color_mode_for_feature_injection` before feature gathering) rather than
+        // querying the terminal a second time.
+        opt.computed.detected_color_mode
     }
+}
+
+/// Resolve the effective color mode *before* features are gathered, so that per-mode feature
+/// lists (`dark-features` / `light-features`) can be activated according to the detected mode.
+///
+/// The trigger deliberately considers only sources that are independent of the feature list,
+/// to avoid a circular dependency (an activated theme typically sets `dark = true` itself):
+///   1. the `--light` / `--dark` command-line flags,
+///   2. the `light` / `dark` keys in the main `[delta]` git config section (read directly,
+///      not via the feature machinery),
+///   3. terminal detection (subject to `--detect-dark-light`).
+///
+/// The terminal-detection result is cached in `opt.computed.detected_color_mode` so that the
+/// later call to `get_color_mode` reuses it instead of querying the terminal again.
+pub fn resolve_color_mode_for_feature_injection(
+    opt: &mut cli::Opt,
+    git_config: &mut Option<GitConfig>,
+) -> Option<ColorMode> {
+    if opt.light {
+        return Some(Light);
+    }
+    if opt.dark {
+        return Some(Dark);
+    }
+    if let Some(git_config) = git_config {
+        // Read the main-section keys directly; do not consult enabled features (that would be
+        // circular). If both are literally set, prefer Dark here and let the existing
+        // `validate_light_and_dark` raise the error later.
+        let main_dark = git_config.get::<bool>("delta.dark").unwrap_or(false);
+        let main_light = git_config.get::<bool>("delta.light").unwrap_or(false);
+        if main_dark {
+            return Some(Dark);
+        }
+        if main_light {
+            return Some(Light);
+        }
+    }
+    if should_detect_color_mode(opt) {
+        let detected = detect_color_mode();
+        opt.computed.detected_color_mode = detected;
+        return detected;
+    }
+    None
 }
 
 /// See [`cli::Opt::detect_dark_light`] for a detailed explanation.
