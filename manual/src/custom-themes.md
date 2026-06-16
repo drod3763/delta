@@ -47,5 +47,6 @@ Because the values are ordinary feature lists, they can reference any feature â€
 themes. For example you can enable `side-by-side` only in dark mode, or use a different
 `syntax-theme` per mode. The per-mode lists take priority over a plain `features` list. Like
 `features`, they are part of the git-config feature list, so passing `--features` on the
-command line replaces them (use the `+` prefix, e.g. `--features +side-by-side`, to add to the
-configured features instead of replacing them).
+command line replaces them. To add a feature for a single invocation while keeping the
+configured features (including the per-mode lists), use the additive `DELTA_FEATURES`
+environment variable, e.g. `DELTA_FEATURES=+side-by-side`.
