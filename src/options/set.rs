@@ -101,7 +101,8 @@ pub fn set_options(
             .as_ref()
             .and_then(|git_config| git_config.get::<String>("delta.detect-dark-light"))
         {
-            match <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, true) {
+            // Case-sensitive (`false`) to match clap's CLI parsing, which has no `ignore_case`.
+            match <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, false) {
                 Ok(value) => opt.detect_dark_light = value,
                 // An invalid value on the CLI is rejected by clap; reject it from git config too,
                 // rather than silently reverting to the default.
@@ -1300,6 +1301,22 @@ pub mod tests {
             integration_test_utils::make_options_from_args_and_git_config(
                 &[],
                 Some(b"\n[delta]\n    detect-dark-light = bogus\n"),
+                Some(git_config_path),
+            );
+        });
+        let _ = remove_file(git_config_path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_case_mismatched_detect_dark_light_in_git_config_is_fatal() {
+        // Parsing matches clap's case-sensitive CLI validation, so a case-mismatched value is
+        // rejected from git config too (not silently accepted).
+        let git_config_path = "delta__test_case_mismatched_detect_dark_light.gitconfig";
+        let result = std::panic::catch_unwind(|| {
+            integration_test_utils::make_options_from_args_and_git_config(
+                &[],
+                Some(b"\n[delta]\n    detect-dark-light = NEVER\n"),
                 Some(git_config_path),
             );
         });
