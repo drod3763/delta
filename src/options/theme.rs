@@ -104,13 +104,13 @@ pub fn resolve_color_mode_for_feature_injection(
 ) -> Option<ColorMode> {
     use crate::options::get::get_option_value;
 
-    if opt.light {
-        return Some(Light);
-    }
+    // Dark wins a dark+light conflict; a real one is rejected later by validate_light_and_dark.
     if opt.dark {
         return Some(Dark);
     }
-    // Conflicting dark+light is left for `validate_light_and_dark` to reject; prefer Dark here.
+    if opt.light {
+        return Some(Light);
+    }
     let dark = get_option_value::<bool>("dark", builtin_features, opt, git_config).unwrap_or(false);
     let light =
         get_option_value::<bool>("light", builtin_features, opt, git_config).unwrap_or(false);
@@ -175,14 +175,12 @@ mod tests {
 
     #[test]
     fn test_should_detect_color_mode_respects_effective_color_only() {
-        // In Auto mode with a non-terminal stdout (as in tests), detection must still run when
-        // the effective `color_only` is true — e.g. set via git config or a feature, not only the
-        // CLI flag. This guards the regression where the early resolver gated detection on the
-        // not-yet-resolved `opt.color_only`.
+        // In Auto mode, effective `color_only` forces detection regardless of the terminal;
+        // otherwise it follows is_terminal(). This guards the regression where the early resolver
+        // gated detection on the not-yet-resolved `opt.color_only`.
         let opt = integration_test_utils::make_options_from_args(&["--detect-dark-light", "auto"]);
-        assert!(!stdout().is_terminal());
         assert!(should_detect_color_mode(&opt, true));
-        assert!(!should_detect_color_mode(&opt, false));
+        assert_eq!(should_detect_color_mode(&opt, false), stdout().is_terminal());
         let always =
             integration_test_utils::make_options_from_args(&["--detect-dark-light", "always"]);
         assert!(should_detect_color_mode(&always, false));
