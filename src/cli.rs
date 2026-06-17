@@ -166,6 +166,11 @@ pub struct Opt {
     /// as `interactive.diffFilter`. In this case the color is queried from the terminal even
     /// though the output is redirected.
     ///
+    /// `system-global` ignores the terminal and uses the OS-wide light/dark appearance instead
+    /// (assuming the terminal follows the OS). Unlike terminal detection it works when the
+    /// output is piped, e.g. through a pager TUI such as diffnav. This can also be set in git
+    /// config as `delta.detect-dark-light`.
+    ///
     #[arg(long = "detect-dark-light", value_enum, default_value_t = DetectDarkLight::default())]
     pub detect_dark_light: DetectDarkLight,
 
@@ -1210,6 +1215,9 @@ pub enum DetectDarkLight {
     /// Only query the terminal for its colors if the output is not redirected.
     #[default]
     Auto,
+    /// Use the OS-wide light/dark appearance instead of querying the terminal (assumes the
+    /// terminal follows the OS). Works even when the output is piped.
+    SystemGlobal,
     /// Always query the terminal for its colors.
     Always,
     /// Never query the terminal for its colors.

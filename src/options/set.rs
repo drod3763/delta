@@ -93,6 +93,19 @@ pub fn set_options(
         builtin_features.remove("side-by-side");
     }
 
+    // `detect-dark-light` is a CLI flag but also honored from git config (so it reaches delta
+    // when invoked by a pager TUI such as diffnav, which passes no flags). Resolve it before the
+    // mode resolver below reads it. Precedence: CLI > git config > default.
+    if !config::user_supplied_option("detect_dark_light", arg_matches) {
+        if let Some(value) = git_config
+            .as_ref()
+            .and_then(|git_config| git_config.get::<String>("delta.detect-dark-light"))
+            .and_then(|s| <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, true).ok())
+        {
+            opt.detect_dark_light = value;
+        }
+    }
+
     // Two passes so a `dark-features`/`light-features` list is selected by the same mode that
     // renders: gather the base list, resolve the mode over it (the resolver reads it back off
     // opt.features), then gather again injecting the matching per-mode list.
@@ -1238,6 +1251,55 @@ pub mod tests {
             Some(git_config_path),
         );
         assert_eq!(opt.plus_style, "plain-plus");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_detect_dark_light_system_global_from_git_config() {
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = system-global
+";
+        let git_config_path = "delta__test_detect_dark_light_system_global.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::SystemGlobal);
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_detect_dark_light_never_from_git_config() {
+        // detect-dark-light is now honored from git config (previously silently ignored).
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+";
+        let git_config_path = "delta__test_detect_dark_light_never.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::Never);
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_detect_dark_light_cli_overrides_git_config() {
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = system-global
+";
+        let git_config_path = "delta__test_detect_dark_light_cli_overrides.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--detect-dark-light", "auto"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::Auto);
         remove_file(git_config_path).unwrap();
     }
 

@@ -50,3 +50,23 @@ themes. For example you can enable `side-by-side` only in dark mode, or use a di
 command line replaces them. To add a feature for a single invocation while keeping the
 configured features (including the per-mode lists), use the additive `DELTA_FEATURES`
 environment variable, e.g. `DELTA_FEATURES=+side-by-side`.
+
+### Detecting light/dark from the OS
+
+By default delta detects the terminal background by querying the terminal. That query needs an
+interactive terminal, so it does not work when delta's output is piped — for example when delta
+runs inside a pager TUI such as [diffnav](https://github.com/dlvhdr/diffnav). In that case delta
+falls back to dark.
+
+Set `detect-dark-light` to `system-global` to use the OS-wide light/dark appearance instead. It
+needs no terminal query, so it works when piped, and (unlike most options) it is honored from git
+config, so a pager TUI that passes delta no flags still picks it up:
+
+```gitconfig
+[delta]
+    detect-dark-light = system-global
+```
+
+This assumes your terminal follows the OS appearance. It is supported on macOS, Windows, and
+Linux (via the XDG desktop portal); where the OS reports no preference, delta falls back to its
+usual behavior.
