@@ -277,7 +277,10 @@ fn set__light__dark__syntax_theme__options(
 ) {
     let validate_light_and_dark = |opt: &cli::Opt| {
         if opt.light && opt.dark {
-            fatal("--light and --dark cannot be used together.");
+            fatal(
+                "Both light and dark mode are enabled. Use only one of --light / --dark, \
+                 or the `light` / `dark` settings in git config or a feature.",
+            );
         }
     };
     let empty_builtin_features = HashMap::new();
