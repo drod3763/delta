@@ -97,12 +97,16 @@ pub fn set_options(
     // when invoked by a pager TUI such as diffnav, which passes no flags). Resolve it before the
     // mode resolver below reads it. Precedence: CLI > git config > default.
     if !config::user_supplied_option("detect_dark_light", arg_matches) {
-        if let Some(value) = git_config
+        if let Some(s) = git_config
             .as_ref()
             .and_then(|git_config| git_config.get::<String>("delta.detect-dark-light"))
-            .and_then(|s| <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, true).ok())
         {
-            opt.detect_dark_light = value;
+            match <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, true) {
+                Ok(value) => opt.detect_dark_light = value,
+                // An invalid value on the CLI is rejected by clap; reject it from git config too,
+                // rather than silently reverting to the default.
+                Err(err) => fatal(format!("Invalid delta.detect-dark-light value '{s}': {err}")),
+            }
         }
     }
 
@@ -1285,6 +1289,22 @@ pub mod tests {
         );
         assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::Never);
         remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_invalid_detect_dark_light_in_git_config_is_fatal() {
+        // An unparseable value is a fatal error (matching clap's CLI validation), not a silent
+        // revert to the default. catch_unwind so the panic can't leave the fixture file behind.
+        let git_config_path = "delta__test_invalid_detect_dark_light.gitconfig";
+        let result = std::panic::catch_unwind(|| {
+            integration_test_utils::make_options_from_args_and_git_config(
+                &[],
+                Some(b"\n[delta]\n    detect-dark-light = bogus\n"),
+                Some(git_config_path),
+            );
+        });
+        let _ = remove_file(git_config_path);
+        assert!(result.is_err());
     }
 
     #[test]

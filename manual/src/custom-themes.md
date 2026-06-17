@@ -68,5 +68,5 @@ config, so a pager TUI that passes delta no flags still picks it up:
 ```
 
 This assumes your terminal follows the OS appearance. It is supported on macOS, Windows, and
-Linux (via the XDG desktop portal); where the OS reports no preference, delta falls back to its
-usual behavior.
+Linux (via the XDG desktop portal). If the OS reports no preference (or detection fails), delta
+falls back to querying the terminal when it can, otherwise to its default.

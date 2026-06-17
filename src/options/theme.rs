@@ -135,6 +135,14 @@ pub fn resolve_color_mode_for_feature_injection(
             if let Some(detected) = detect_color_mode_system_global() {
                 return Some(detected);
             }
+            // The OS reported no preference (or detection failed). Fall back to a terminal query
+            // when there is a terminal to query; piped output can't be queried, so it harmlessly
+            // falls through to the syntax-theme/default below.
+            if stdout().is_terminal() {
+                if let Some(detected) = detect_color_mode() {
+                    return Some(detected);
+                }
+            }
         }
         _ => {
             if should_detect_color_mode(opt, color_only) {
