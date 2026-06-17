@@ -171,9 +171,9 @@ fn detect_color_mode() -> Option<ColorMode> {
         .map(ColorMode::from)
 }
 
-/// Resolve the mode from the OS-wide appearance (macOS/Windows/Linux via the `dark-light` crate).
-/// Returns `None` when the OS reports no preference or detection fails, so the caller falls
-/// through to the remaining sources.
+/// Resolve the mode from the OS-wide appearance via the `dark-light` crate. Returns `None` when
+/// the OS reports no preference, detection fails, or the target is unsupported (see the `cfg`
+/// below), so the caller falls through to the remaining sources.
 // `dark_light::detect()` returns `Result<Mode, _>` only on macOS, Windows, Linux, the BSDs, and
 // wasm (this list mirrors `dark-light`'s own `cfg`s); on any other target its fallback returns a
 // bare `Mode`. Gate the call to those targets so the build doesn't break elsewhere, returning

@@ -68,5 +68,6 @@ well as the command line, so a pager TUI that passes delta no flags still picks 
 ```
 
 This assumes your terminal follows the OS appearance. It is supported on macOS, Windows, and
-Linux (via the XDG desktop portal). If the OS reports no preference (or detection fails), delta
-falls back to querying the terminal when it can, otherwise to its default.
+Linux and the BSDs (the latter two via the XDG desktop portal). If the OS reports no preference
+(or detection fails), delta falls back to querying the terminal when it can, otherwise to its
+default.
