@@ -136,9 +136,10 @@ pub fn resolve_color_mode_for_feature_injection(
                 return Some(detected);
             }
             // The OS reported no preference (or detection failed). Fall back to a terminal query
-            // when there is a terminal to query; piped output can't be queried, so it harmlessly
-            // falls through to the syntax-theme/default below.
-            if stdout().is_terminal() {
+            // under the same condition as `Auto` (a terminal to query, or `--color-only` for
+            // interactive.diffFilter); fully-piped output has no terminal, so it harmlessly falls
+            // through to the syntax-theme/default below.
+            if color_only || stdout().is_terminal() {
                 if let Some(detected) = detect_color_mode() {
                     return Some(detected);
                 }
@@ -231,7 +232,8 @@ mod tests {
         let never =
             integration_test_utils::make_options_from_args(&["--detect-dark-light", "never"]);
         assert!(!should_detect_color_mode(&never, true));
-        // system-global never queries the terminal; it uses the OS appearance instead.
+        // In system-global mode the terminal is not the primary source (the OS appearance is);
+        // should_detect_color_mode is false, though the resolver may still fall back to a query.
         let system_global = integration_test_utils::make_options_from_args(&[
             "--detect-dark-light",
             "system-global",

@@ -59,8 +59,8 @@ runs inside a pager TUI such as [diffnav](https://github.com/dlvhdr/diffnav). In
 falls back to dark.
 
 Set `detect-dark-light` to `system-global` to use the OS-wide light/dark appearance instead. It
-needs no terminal query, so it works when piped, and (unlike most options) it is honored from git
-config, so a pager TUI that passes delta no flags still picks it up:
+needs no terminal query, so it works when piped. `detect-dark-light` is read from git config as
+well as the command line, so a pager TUI that passes delta no flags still picks it up:
 
 ```gitconfig
 [delta]
