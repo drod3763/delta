@@ -916,7 +916,6 @@ pub mod tests {
         // syntax theme (GitHub -> light), so `light-features` must be activated to match.
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     syntax-theme = GitHub
     light-features = my-light
 
@@ -941,7 +940,6 @@ pub mod tests {
         // injected (not dark-features chosen from BAT_THEME).
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     syntax-theme = GitHub
     dark-features = my-dark
     light-features = my-light
@@ -975,7 +973,6 @@ pub mod tests {
         // (light) mode must remain authoritative for rendering.
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     features = base-light
     dark-features = dark-extra
     light-features = light-extra
@@ -1009,7 +1006,6 @@ pub mod tests {
         // highlighting — that must NOT flip the rendered mode back to light.
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     features = base-dark
     dark-features = dark-extra
     light-features = light-extra
@@ -1043,7 +1039,6 @@ pub mod tests {
         // per-mode selection must follow it and inject `light-features`.
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     features = base
     dark-features = my-dark
     light-features = my-light
@@ -1076,7 +1071,6 @@ pub mod tests {
         // `light-features` (not `dark-features`).
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     features = my-light-theme
     dark-features = my-dark
     light-features = my-light
@@ -1138,7 +1132,6 @@ pub mod tests {
         // dark, so `dark-features` must still be applied (matching the renderer's mode).
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     dark-features = my-dark
 
 [delta \"my-dark\"]
@@ -1233,7 +1226,6 @@ pub mod tests {
         // Detection disabled, no flags, no per-mode keys: nothing is injected and no panic.
         let git_config_contents = b"
 [delta]
-    detect-dark-light = never
     plus-style = plain-plus
 ";
         let git_config_path = "delta__test_no_per_mode_features.gitconfig";
