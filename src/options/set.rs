@@ -43,7 +43,7 @@ macro_rules! set_options {
                 "24-bit-color",
                 "diff-highlight", // Does not exist as a flag on config
                 "diff-so-fancy", // Does not exist as a flag on config
-                "detect-dark-light", // Does not exist as a flag on config
+                "detect-dark-light", // Resolved from config separately (enum, not via the macro)
                 "features",  // Processed differently
                 // Set prior to the rest
                 "no-gitconfig",

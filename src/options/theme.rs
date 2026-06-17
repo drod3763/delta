@@ -128,29 +128,17 @@ pub fn resolve_color_mode_for_feature_injection(
     let color_only = opt.color_only
         || get_option_value::<bool>("color-only", builtin_features, opt, git_config)
             .unwrap_or(false);
-    match opt.detect_dark_light {
-        // OS appearance needs no terminal handshake, so it runs regardless of whether stdout is
-        // a terminal — that's what makes it work when delta is piped (e.g. through diffnav).
-        DetectDarkLight::SystemGlobal => {
-            if let Some(detected) = detect_color_mode_system_global() {
-                return Some(detected);
-            }
-            // The OS reported no preference (or detection failed). Fall back to a terminal query
-            // under the same condition as `Auto` (a terminal to query, or `--color-only` for
-            // interactive.diffFilter); fully-piped output has no terminal, so it harmlessly falls
-            // through to the syntax-theme/default below.
-            if color_only || stdout().is_terminal() {
-                if let Some(detected) = detect_color_mode() {
-                    return Some(detected);
-                }
-            }
+    // In system-global mode the OS appearance is the primary source — it needs no terminal
+    // handshake, so it works when piped (e.g. through diffnav). On no preference it falls through
+    // to the terminal query below, which `should_detect_color_mode` gates exactly as for `Auto`.
+    if opt.detect_dark_light == DetectDarkLight::SystemGlobal {
+        if let Some(detected) = detect_color_mode_system_global() {
+            return Some(detected);
         }
-        _ => {
-            if should_detect_color_mode(opt, color_only) {
-                if let Some(detected) = detect_color_mode() {
-                    return Some(detected);
-                }
-            }
+    }
+    if should_detect_color_mode(opt, color_only) {
+        if let Some(detected) = detect_color_mode() {
+            return Some(detected);
         }
     }
     // Same precedence as final setup: an explicit --syntax-theme wins; otherwise config/feature
@@ -168,9 +156,11 @@ pub fn resolve_color_mode_for_feature_injection(
 /// `opt.color_only` (which the option macro finalizes later).
 fn should_detect_color_mode(opt: &cli::Opt, color_only: bool) -> bool {
     match opt.detect_dark_light {
-        DetectDarkLight::Auto => color_only || stdout().is_terminal(),
+        // SystemGlobal shares Auto's gate: it governs the terminal fallback used when the OS
+        // reports no preference.
+        DetectDarkLight::Auto | DetectDarkLight::SystemGlobal => color_only || stdout().is_terminal(),
         DetectDarkLight::Always => true,
-        DetectDarkLight::Never | DetectDarkLight::SystemGlobal => false,
+        DetectDarkLight::Never => false,
     }
 }
 
@@ -232,13 +222,13 @@ mod tests {
         let never =
             integration_test_utils::make_options_from_args(&["--detect-dark-light", "never"]);
         assert!(!should_detect_color_mode(&never, true));
-        // In system-global mode the terminal is not the primary source (the OS appearance is);
-        // should_detect_color_mode is false, though the resolver may still fall back to a query.
+        // system-global shares Auto's gate (it governs the terminal fallback when the OS reports
+        // no preference): `color_only` forces it regardless of the terminal.
         let system_global = integration_test_utils::make_options_from_args(&[
             "--detect-dark-light",
             "system-global",
         ]);
-        assert!(!should_detect_color_mode(&system_global, true));
+        assert!(should_detect_color_mode(&system_global, true));
     }
 
     // TODO: Test influence of BAT_THEME env var. E.g. see utils::process::tests::FakeParentArgs.
