@@ -128,6 +128,14 @@ pub fn resolve_color_mode_for_feature_injection(
     let color_only = opt.color_only
         || get_option_value::<bool>("color-only", builtin_features, opt, git_config)
             .unwrap_or(false);
+    // In system-global mode the OS appearance is the primary source — it needs no terminal
+    // handshake, so it works when piped (e.g. through diffnav). On no preference it falls through
+    // to the terminal query below, which `should_detect_color_mode` gates exactly as for `Auto`.
+    if opt.detect_dark_light == DetectDarkLight::SystemGlobal {
+        if let Some(detected) = detect_color_mode_system_global() {
+            return Some(detected);
+        }
+    }
     if should_detect_color_mode(opt, color_only) {
         if let Some(detected) = detect_color_mode() {
             return Some(detected);
@@ -148,7 +156,9 @@ pub fn resolve_color_mode_for_feature_injection(
 /// `opt.color_only` (which the option macro finalizes later).
 fn should_detect_color_mode(opt: &cli::Opt, color_only: bool) -> bool {
     match opt.detect_dark_light {
-        DetectDarkLight::Auto => color_only || stdout().is_terminal(),
+        // SystemGlobal shares Auto's gate: it governs the terminal fallback used when the OS
+        // reports no preference.
+        DetectDarkLight::Auto | DetectDarkLight::SystemGlobal => color_only || stdout().is_terminal(),
         DetectDarkLight::Always => true,
         DetectDarkLight::Never => false,
     }
@@ -159,6 +169,42 @@ fn detect_color_mode() -> Option<ColorMode> {
     color_scheme(QueryOptions::default())
         .ok()
         .map(ColorMode::from)
+}
+
+/// Resolve the mode from the OS-wide appearance via the `dark-light` crate. Returns `None` when
+/// the OS reports no preference, detection fails, or the target is unsupported (see the `cfg`
+/// below), so the caller falls through to the remaining sources.
+// `dark_light::detect()` returns `Result<Mode, _>` only on macOS, Windows, Linux, the BSDs, and
+// wasm (this list mirrors `dark-light`'s own `cfg`s); on any other target its fallback returns a
+// bare `Mode`. Gate the call to those targets so the build doesn't break elsewhere, returning
+// `None` (no OS detection) on the rest.
+#[cfg(not(test))]
+fn detect_color_mode_system_global() -> Option<ColorMode> {
+    cfg_if::cfg_if! {
+        if #[cfg(any(
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_arch = "wasm32"
+        ))] {
+            match dark_light::detect() {
+                Ok(dark_light::Mode::Dark) => Some(Dark),
+                Ok(dark_light::Mode::Light) => Some(Light),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+fn detect_color_mode_system_global() -> Option<ColorMode> {
+    None
 }
 
 impl From<terminal_colorsaurus::ColorScheme> for ColorMode {
@@ -195,6 +241,13 @@ mod tests {
         let never =
             integration_test_utils::make_options_from_args(&["--detect-dark-light", "never"]);
         assert!(!should_detect_color_mode(&never, true));
+        // system-global shares Auto's gate (it governs the terminal fallback when the OS reports
+        // no preference): `color_only` forces it regardless of the terminal.
+        let system_global = integration_test_utils::make_options_from_args(&[
+            "--detect-dark-light",
+            "system-global",
+        ]);
+        assert!(should_detect_color_mode(&system_global, true));
     }
 
     // TODO: Test influence of BAT_THEME env var. E.g. see utils::process::tests::FakeParentArgs.

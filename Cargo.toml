@@ -26,6 +26,8 @@ bat = { version = "0.26.0", default-features = false, features = [
 ] }
 bitflags = "2.2.1"
 box_drawing = "0.1.2"
+cfg-if = "1"
+dark-light = "2"
 bytelines = { version = "2.5.0", default-features = false }
 chrono = "0.4.26"
 chrono-humanize = "0.2.2"

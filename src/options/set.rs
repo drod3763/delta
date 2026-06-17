@@ -43,7 +43,7 @@ macro_rules! set_options {
                 "24-bit-color",
                 "diff-highlight", // Does not exist as a flag on config
                 "diff-so-fancy", // Does not exist as a flag on config
-                "detect-dark-light", // Does not exist as a flag on config
+                "detect-dark-light", // Resolved from config separately (enum, not via the macro)
                 "features",  // Processed differently
                 // Set prior to the rest
                 "no-gitconfig",
@@ -91,6 +91,24 @@ pub fn set_options(
     // there (does not emit lines in 1-1 correspondence with raw git output). See #274.
     if config::user_supplied_option("color_only", arg_matches) {
         builtin_features.remove("side-by-side");
+    }
+
+    // `detect-dark-light` is a CLI flag but also honored from git config (so it reaches delta
+    // when invoked by a pager TUI such as diffnav, which passes no flags). Resolve it before the
+    // mode resolver below reads it. Precedence: CLI > git config > default.
+    if !config::user_supplied_option("detect_dark_light", arg_matches) {
+        if let Some(s) = git_config
+            .as_ref()
+            .and_then(|git_config| git_config.get::<String>("delta.detect-dark-light"))
+        {
+            // Case-sensitive (`false`) to match clap's CLI parsing, which has no `ignore_case`.
+            match <cli::DetectDarkLight as clap::ValueEnum>::from_str(&s, false) {
+                Ok(value) => opt.detect_dark_light = value,
+                // An invalid value on the CLI is rejected by clap; reject it from git config too,
+                // rather than silently reverting to the default.
+                Err(err) => fatal(format!("Invalid delta.detect-dark-light value '{s}': {err}")),
+            }
+        }
     }
 
     // Two passes so a `dark-features`/`light-features` list is selected by the same mode that
@@ -1238,6 +1256,87 @@ pub mod tests {
             Some(git_config_path),
         );
         assert_eq!(opt.plus_style, "plain-plus");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_detect_dark_light_system_global_from_git_config() {
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = system-global
+";
+        let git_config_path = "delta__test_detect_dark_light_system_global.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::SystemGlobal);
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_detect_dark_light_never_from_git_config() {
+        // detect-dark-light is now honored from git config (previously silently ignored).
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+";
+        let git_config_path = "delta__test_detect_dark_light_never.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::Never);
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_invalid_detect_dark_light_in_git_config_is_fatal() {
+        // An unparseable value is a fatal error (matching clap's CLI validation), not a silent
+        // revert to the default. catch_unwind so the panic can't leave the fixture file behind.
+        let git_config_path = "delta__test_invalid_detect_dark_light.gitconfig";
+        let result = std::panic::catch_unwind(|| {
+            integration_test_utils::make_options_from_args_and_git_config(
+                &[],
+                Some(b"\n[delta]\n    detect-dark-light = bogus\n"),
+                Some(git_config_path),
+            );
+        });
+        let _ = remove_file(git_config_path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_case_mismatched_detect_dark_light_in_git_config_is_fatal() {
+        // Parsing matches clap's case-sensitive CLI validation, so a case-mismatched value is
+        // rejected from git config too (not silently accepted).
+        let git_config_path = "delta__test_case_mismatched_detect_dark_light.gitconfig";
+        let result = std::panic::catch_unwind(|| {
+            integration_test_utils::make_options_from_args_and_git_config(
+                &[],
+                Some(b"\n[delta]\n    detect-dark-light = NEVER\n"),
+                Some(git_config_path),
+            );
+        });
+        let _ = remove_file(git_config_path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_dark_light_cli_overrides_git_config() {
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = system-global
+";
+        let git_config_path = "delta__test_detect_dark_light_cli_overrides.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &["--detect-dark-light", "auto"],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.detect_dark_light, cli::DetectDarkLight::Auto);
         remove_file(git_config_path).unwrap();
     }
 
