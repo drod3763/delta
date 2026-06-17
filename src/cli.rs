@@ -169,7 +169,8 @@ pub struct Opt {
     /// `system-global` uses the OS-wide light/dark appearance rather than querying the terminal
     /// (assuming the terminal follows the OS), so it works when the output is piped, e.g. through
     /// a pager TUI such as diffnav. If the OS reports no preference it falls back to terminal
-    /// detection. This can also be set in git config as `delta.detect-dark-light`.
+    /// detection, gated the same way as `auto` (so fully-piped output uses the default). This can
+    /// also be set in git config as `delta.detect-dark-light`.
     ///
     #[arg(long = "detect-dark-light", value_enum, default_value_t = DetectDarkLight::default())]
     pub detect_dark_light: DetectDarkLight,
@@ -1216,8 +1217,8 @@ pub enum DetectDarkLight {
     #[default]
     Auto,
     /// Use the OS-wide light/dark appearance rather than querying the terminal (assumes the
-    /// terminal follows the OS). Works even when the output is piped; falls back to terminal
-    /// detection if the OS reports no preference.
+    /// terminal follows the OS). Works even when the output is piped; if the OS reports no
+    /// preference it falls back to terminal detection, gated the same way as `Auto`.
     SystemGlobal,
     /// Always query the terminal for its colors.
     Always,
