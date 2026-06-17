@@ -91,12 +91,14 @@ fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
 }
 
 /// Resolve the color mode that selects the per-mode feature lists, before the final feature list
-/// is gathered. Precedence matches the final resolution ([`get_color_mode`] +
-/// [`get_color_mode_and_syntax_theme_name`]) so the selected list matches what renders.
+/// is gathered: CLI `--light`/`--dark`, then config/feature `dark`/`light`, then detection, then
+/// the syntax theme, then default dark. The result is frozen into
+/// `opt.computed.resolved_color_mode` and is what `get_color_mode` returns, so the selected list
+/// matches what renders.
 ///
 /// `opt.features` must hold the *base* list (gathered without per-mode injection): that lets a
 /// mode-declaring theme in `features` count while keeping selection non-circular (the per-mode
-/// lists never decide which of them to activate). Never returns `None`.
+/// lists never decide which of them to activate).
 pub fn resolve_color_mode_for_feature_injection(
     opt: &mut cli::Opt,
     builtin_features: &std::collections::HashMap<String, crate::features::BuiltinFeature>,
