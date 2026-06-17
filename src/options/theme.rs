@@ -103,6 +103,7 @@ pub fn resolve_color_mode_for_feature_injection(
     opt: &mut cli::Opt,
     builtin_features: &std::collections::HashMap<String, crate::features::BuiltinFeature>,
     git_config: &mut Option<GitConfig>,
+    arg_matches: &clap::ArgMatches,
 ) -> Option<ColorMode> {
     use crate::options::get::get_option_value;
 
@@ -132,9 +133,14 @@ pub fn resolve_color_mode_for_feature_injection(
             return Some(detected);
         }
     }
-    let syntax_theme = opt.syntax_theme.clone().or_else(|| {
+    // Same precedence as final setup: an explicit --syntax-theme wins; otherwise config/feature
+    // `syntax-theme` outranks the BAT_THEME value already on `opt.syntax_theme`.
+    let syntax_theme = if crate::config::user_supplied_option("syntax_theme", arg_matches) {
+        opt.syntax_theme.clone()
+    } else {
         get_option_value::<String>("syntax-theme", builtin_features, opt, git_config)
-    });
+            .or_else(|| opt.syntax_theme.clone())
+    };
     Some(get_color_mode_and_syntax_theme_name(syntax_theme.as_ref(), None).0)
 }
 

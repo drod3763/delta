@@ -99,8 +99,12 @@ pub fn set_options(
     let saved_features = opt.features.clone();
     let base_features = gather_features(opt, &builtin_features, git_config, None);
     opt.features = Some(base_features.join(" "));
-    let injected_mode =
-        theme::resolve_color_mode_for_feature_injection(opt, &builtin_features, git_config);
+    let injected_mode = theme::resolve_color_mode_for_feature_injection(
+        opt,
+        &builtin_features,
+        git_config,
+        arg_matches,
+    );
     opt.computed.resolved_color_mode = injected_mode;
     opt.features = saved_features;
 
@@ -922,6 +926,40 @@ pub mod tests {
 ";
         let git_config_path = "delta__test_per_mode_features_syntax_theme_derived.gitconfig";
         let opt = integration_test_utils::make_options_from_args_and_git_config(
+            &[],
+            Some(git_config_contents),
+            Some(git_config_path),
+        );
+        assert_eq!(opt.plus_style, "light-plus-sentinel");
+        remove_file(git_config_path).unwrap();
+    }
+
+    #[test]
+    fn test_per_mode_features_prefer_config_syntax_theme_over_bat_theme() {
+        // BAT_THEME is a dark theme, but gitconfig syntax-theme is light. Final resolution
+        // prefers the config syntax theme, so the render is light and light-features must be
+        // injected (not dark-features chosen from BAT_THEME).
+        let git_config_contents = b"
+[delta]
+    detect-dark-light = never
+    syntax-theme = GitHub
+    dark-features = my-dark
+    light-features = my-light
+
+[delta \"my-dark\"]
+    dark = true
+    plus-style = dark-plus-sentinel
+
+[delta \"my-light\"]
+    light = true
+    plus-style = light-plus-sentinel
+";
+        let git_config_path = "delta__test_per_mode_config_syntax_theme_over_bat.gitconfig";
+        let opt = integration_test_utils::make_options_from_args_and_git_config_with_custom_env(
+            crate::env::DeltaEnv {
+                bat_theme: Some("Monokai Extended".into()),
+                ..crate::env::DeltaEnv::default()
+            },
             &[],
             Some(git_config_contents),
             Some(git_config_path),
