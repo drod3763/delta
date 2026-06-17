@@ -175,44 +175,31 @@ fn detect_color_mode() -> Option<ColorMode> {
 /// Returns `None` when the OS reports no preference or detection fails, so the caller falls
 /// through to the remaining sources.
 // `dark_light::detect()` returns `Result<Mode, _>` only on the platforms the crate supports; on
-// any other target its fallback returns a bare `Mode`. Gate the call to the supported targets so
-// the build doesn't break elsewhere, returning `None` (no OS detection) on the rest.
-#[cfg(all(
-    not(test),
-    any(
-        target_os = "macos",
-        target_os = "windows",
-        target_os = "linux",
-        target_os = "freebsd",
-        target_os = "dragonfly",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_arch = "wasm32"
-    )
-))]
+// any other target its fallback returns a bare `Mode`. Gate the call to the supported targets
+// (this list mirrors `dark-light`'s own `cfg`s) so the build doesn't break elsewhere, returning
+// `None` (no OS detection) on the rest.
+#[cfg(not(test))]
 fn detect_color_mode_system_global() -> Option<ColorMode> {
-    match dark_light::detect() {
-        Ok(dark_light::Mode::Dark) => Some(Dark),
-        Ok(dark_light::Mode::Light) => Some(Light),
-        _ => None,
+    cfg_if::cfg_if! {
+        if #[cfg(any(
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_arch = "wasm32"
+        ))] {
+            match dark_light::detect() {
+                Ok(dark_light::Mode::Dark) => Some(Dark),
+                Ok(dark_light::Mode::Light) => Some(Light),
+                _ => None,
+            }
+        } else {
+            None
+        }
     }
-}
-
-#[cfg(all(
-    not(test),
-    not(any(
-        target_os = "macos",
-        target_os = "windows",
-        target_os = "linux",
-        target_os = "freebsd",
-        target_os = "dragonfly",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_arch = "wasm32"
-    ))
-))]
-fn detect_color_mode_system_global() -> Option<ColorMode> {
-    None
 }
 
 #[cfg(test)]

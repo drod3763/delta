@@ -1080,6 +1080,7 @@ dependencies = [
  "bitflags",
  "box_drawing",
  "bytelines",
+ "cfg-if",
  "chrono",
  "chrono-humanize",
  "clap",
