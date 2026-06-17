@@ -90,23 +90,13 @@ fn get_color_mode_and_syntax_theme_name(
 
 fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
     // The mode resolved before per-mode feature injection (by
-    // `resolve_color_mode_for_feature_injection`) is authoritative: it already folded in the CLI
-    // `--light`/`--dark` flags, the main-section and base-feature `light`/`dark` settings,
-    // detection, and the base syntax theme. Using it here means the per-mode feature that was
-    // *selected* by that mode cannot then re-flip the rendered mode — via its own `light`/`dark`
-    // flags or its `syntax-theme`. It also avoids querying the terminal a second time.
-    if let Some(mode) = opt.computed.resolved_color_mode {
-        return Some(mode);
-    }
-    // Fallback for any path that did not resolve a mode (the normal `set_options` flow always
-    // does): honor explicit flags, otherwise leave the mode unresolved.
-    if opt.light {
-        Some(Light)
-    } else if opt.dark {
-        Some(Dark)
-    } else {
-        None
-    }
+    // `resolve_color_mode_for_feature_injection`, always run by `set_options`) is authoritative:
+    // it already folded in the CLI `--light`/`--dark` flags, the main-section and base-feature
+    // `light`/`dark` settings, detection, and the base syntax theme. Using it here means the
+    // per-mode feature that was *selected* by that mode cannot then re-flip the rendered mode —
+    // via its own `light`/`dark` flags or its `syntax-theme` — and the terminal is not queried
+    // a second time.
+    opt.computed.resolved_color_mode
 }
 
 /// Resolve the effective color mode *before* the final feature list is gathered, so that the
@@ -173,22 +163,16 @@ pub fn resolve_color_mode_for_feature_injection(
             return Some(detected);
         }
     }
-    // No explicit mode and no detection result: infer the mode from the syntax theme, and
-    // otherwise fall back to dark — exactly the `(Some(theme), None)` / `(None, None)` branches
-    // of `get_color_mode_and_syntax_theme_name`, so per-mode features match the rendered mode.
-    // The syntax theme set on the command line or via BAT_THEME is already on `opt`; otherwise
-    // resolve it with the same precedence as final setup (main section, then the base feature
-    // list now on `opt.features`) so a feature-provided syntax theme is honored too.
+    // No explicit mode and no detection result: infer the mode from the syntax theme. The theme
+    // set on the command line or via BAT_THEME is already on `opt`; otherwise resolve it with the
+    // same precedence as final setup (main section, then the base feature list now on
+    // `opt.features`) so a feature-provided syntax theme is honored too.
     let syntax_theme = opt.syntax_theme.clone().or_else(|| {
         get_option_value::<String>("syntax-theme", builtin_features, opt, git_config)
     });
-    Some(
-        syntax_theme
-            .as_deref()
-            .filter(|theme| !is_no_syntax_highlighting_syntax_theme_name(theme))
-            .map(color_mode_from_syntax_theme)
-            .unwrap_or(Dark),
-    )
+    // Delegate the (syntax_theme, no-mode) → mode decision to the canonical resolver so this
+    // never drifts from the mode the renderer ultimately uses.
+    Some(get_color_mode_and_syntax_theme_name(syntax_theme.as_ref(), None).0)
 }
 
 /// See [`cli::Opt::detect_dark_light`] for a detailed explanation. `color_only` is the effective
