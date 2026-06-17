@@ -13,12 +13,10 @@
 //!
 //! In the absence of other factors, the default assumes a dark terminal background.
 //!
-//! Light vs dark mode is resolved early (before the final feature list is gathered) by
-//! [`resolve_color_mode_for_feature_injection`], so that the `dark-features` / `light-features`
-//! settings can activate different features per mode. That resolved mode is cached in
-//! `opt.computed.resolved_color_mode` and is authoritative for rendering, so the terminal is
-//! queried at most once and an injected per-mode feature's `syntax-theme` cannot re-flip the
-//! mode used to select it.
+//! Mode is resolved before features are gathered (see
+//! [`resolve_color_mode_for_feature_injection`]) so that `dark-features` / `light-features` can
+//! select per mode, then frozen into `opt.computed.resolved_color_mode` so a feature the mode
+//! selected can't re-flip the mode.
 
 use std::io::{stdout, IsTerminal};
 
@@ -89,43 +87,16 @@ fn get_color_mode_and_syntax_theme_name(
 }
 
 fn get_color_mode(opt: &cli::Opt) -> Option<ColorMode> {
-    // The mode resolved before per-mode feature injection (by
-    // `resolve_color_mode_for_feature_injection`, always run by `set_options`) is authoritative:
-    // it already folded in the CLI `--light`/`--dark` flags, the main-section and base-feature
-    // `light`/`dark` settings, detection, and the base syntax theme. Using it here means the
-    // per-mode feature that was *selected* by that mode cannot then re-flip the rendered mode —
-    // via its own `light`/`dark` flags or its `syntax-theme` — and the terminal is not queried
-    // a second time.
     opt.computed.resolved_color_mode
 }
 
-/// Resolve the effective color mode *before* the final feature list is gathered, so that the
-/// per-mode feature lists (`dark-features` / `light-features`) can be activated according to the
-/// mode the renderer will actually use.
+/// Resolve the color mode that selects the per-mode feature lists, before the final feature list
+/// is gathered. Precedence matches the final resolution ([`get_color_mode`] +
+/// [`get_color_mode_and_syntax_theme_name`]) so the selected list matches what renders.
 ///
-/// The caller must set `opt.features` to the **base** feature list (gathered without per-mode
-/// injection) before calling this. That keeps the resolution non-circular — the per-mode lists
-/// themselves are not consulted when deciding which of them to activate — while still honoring a
-/// light/dark-declaring theme placed in `features`.
-///
-/// Precedence mirrors the final resolution applied by [`get_color_mode`] +
-/// [`get_color_mode_and_syntax_theme_name`]:
-///   1. the `--light` / `--dark` command-line flags,
-///   2. the `light` / `dark` settings resolved over the main `[delta]` section and the base
-///      feature list (exactly as [`crate::options::get::get_option_value`] resolves them at
-///      final time), so a mode-declaring theme in `features` counts here too,
-///   3. terminal detection (subject to `--detect-dark-light`),
-///   4. the syntax theme, when none of the above resolve a mode — a light syntax theme implies
-///      light mode and vice versa,
-///   5. otherwise the default dark mode.
-///
-/// Steps 4 and 5 mirror `get_color_mode_and_syntax_theme_name`'s handling of a `None` mode, so
-/// the mode chosen here always matches the mode the renderer ends up in. The function therefore
-/// never returns `None`; it returns `Option` only to compose with the call site.
-///
-/// The caller caches the returned mode in `opt.computed.resolved_color_mode`; `get_color_mode`
-/// reuses it instead of querying the terminal again, and it is authoritative for the rendered
-/// mode when no `--light`/`--dark` or feature-set `light`/`dark` applies.
+/// `opt.features` must hold the *base* list (gathered without per-mode injection): that lets a
+/// mode-declaring theme in `features` count while keeping selection non-circular (the per-mode
+/// lists never decide which of them to activate). Never returns `None`.
 pub fn resolve_color_mode_for_feature_injection(
     opt: &mut cli::Opt,
     builtin_features: &std::collections::HashMap<String, crate::features::BuiltinFeature>,
@@ -139,10 +110,7 @@ pub fn resolve_color_mode_for_feature_injection(
     if opt.dark {
         return Some(Dark);
     }
-    // Resolve `dark`/`light` exactly as the final resolution does — over the main `[delta]`
-    // section and the (base) feature list now on `opt.features`. A theme in `features` that
-    // declares its mode is therefore respected. On a conflict, prefer Dark and let the existing
-    // `validate_light_and_dark` raise the error later.
+    // Conflicting dark+light is left for `validate_light_and_dark` to reject; prefer Dark here.
     let dark = get_option_value::<bool>("dark", builtin_features, opt, git_config).unwrap_or(false);
     let light =
         get_option_value::<bool>("light", builtin_features, opt, git_config).unwrap_or(false);
@@ -152,9 +120,8 @@ pub fn resolve_color_mode_for_feature_injection(
     if light {
         return Some(Light);
     }
-    // `color-only` gates auto-detection, but it may itself be set in the main section or by a
-    // base feature. Resolve its effective value here (the big option macro only finalizes it
-    // later) so detection runs in the same cases as before this two-pass was introduced.
+    // color-only gates detection but is only finalized by the option macro later, so resolve its
+    // effective value now.
     let color_only = opt.color_only
         || get_option_value::<bool>("color-only", builtin_features, opt, git_config)
             .unwrap_or(false);
@@ -163,21 +130,14 @@ pub fn resolve_color_mode_for_feature_injection(
             return Some(detected);
         }
     }
-    // No explicit mode and no detection result: infer the mode from the syntax theme. The theme
-    // set on the command line or via BAT_THEME is already on `opt`; otherwise resolve it with the
-    // same precedence as final setup (main section, then the base feature list now on
-    // `opt.features`) so a feature-provided syntax theme is honored too.
     let syntax_theme = opt.syntax_theme.clone().or_else(|| {
         get_option_value::<String>("syntax-theme", builtin_features, opt, git_config)
     });
-    // Delegate the (syntax_theme, no-mode) → mode decision to the canonical resolver so this
-    // never drifts from the mode the renderer ultimately uses.
     Some(get_color_mode_and_syntax_theme_name(syntax_theme.as_ref(), None).0)
 }
 
-/// See [`cli::Opt::detect_dark_light`] for a detailed explanation. `color_only` is the effective
-/// (config-resolved) value, not necessarily `opt.color_only`, which the option macro finalizes
-/// later.
+/// See [`cli::Opt::detect_dark_light`]. `color_only` is the effective config-resolved value, not
+/// `opt.color_only` (which the option macro finalizes later).
 fn should_detect_color_mode(opt: &cli::Opt, color_only: bool) -> bool {
     match opt.detect_dark_light {
         DetectDarkLight::Auto => color_only || stdout().is_terminal(),

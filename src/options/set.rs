@@ -93,26 +93,15 @@ pub fn set_options(
         builtin_features.remove("side-by-side");
     }
 
-    // Per-mode feature lists (`dark-features` / `light-features`) are activated according to
-    // the effective color mode. Resolve that mode the same way the final resolution will (so
-    // the per-mode list always matches the rendered mode) using a two-pass gather:
-    //
-    //   pass 1: gather the base feature list with no per-mode injection, then resolve the mode
-    //           from it (this is what lets a light/dark-declaring theme in `features`, as well
-    //           as the main section, CLI flags, detection, and the syntax theme, all count);
-    //   pass 2: inject the per-mode list matching that mode and gather the final list.
-    //
-    // Only the matching mode's list is ever gathered, so listing both never conflicts.
+    // Two passes so a `dark-features`/`light-features` list is selected by the same mode that
+    // renders: gather the base list, resolve the mode over it (the resolver reads it back off
+    // opt.features), then gather again injecting the matching per-mode list.
     let saved_features = opt.features.clone();
     let base_features = gather_features(opt, &builtin_features, git_config, None);
-    // Expose the base list to `get_option_value` (via opt.features) while resolving the mode.
     opt.features = Some(base_features.join(" "));
     let injected_mode =
         theme::resolve_color_mode_for_feature_injection(opt, &builtin_features, git_config);
-    // Freeze the resolved mode as authoritative for rendering, so a per-mode feature's own
-    // `syntax-theme` can't later re-flip the mode away from the one used to select it.
     opt.computed.resolved_color_mode = injected_mode;
-    // Restore the original input so pass 2 re-derives the feature list from scratch.
     opt.features = saved_features;
 
     let features = gather_features(opt, &builtin_features, git_config, injected_mode);
@@ -422,12 +411,9 @@ fn gather_features(
     }
 
     if let Some(git_config) = git_config {
-        // Gather features from [delta] section if --features was not passed. An explicit
-        // --features replaces the git-config feature list, including the per-mode lists.
+        // Gather features from [delta] section if --features was not passed.
         if opt.features.is_none() {
-            // Gather per-mode features (`dark-features` / `light-features`) according to the
-            // resolved color mode, before `delta.features` so that they take priority over a
-            // generic `features` list.
+            // Before delta.features, so the per-mode list outranks a generic `features` list.
             if let Some(mode) = injected_mode {
                 use crate::color::ColorMode;
                 let key = match mode {
